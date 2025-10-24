@@ -71,37 +71,51 @@ export default function Home() {
     return id;
   };
 
-  const ask = async (text?: string) => {
-    const curr = (text ?? q).trim();
-    if (!curr) return;
+const ask = async (text?: string) => {
+  const curr = (text ?? q).trim();
+  if (!curr) return;
 
-    // clear input immediately
-    if (!text) setQ("");
+  // clear input immediately
+  if (!text) setQ("");
 
-    const sid = ensureSession();
-    const Backend = process.env.NEXT_PUBLIC_BACKEND_URL!;
-    setItems((m) => [...m, { role: "user", text: curr }]);
-    setLoading(true);
-    try {
-      const res = await fetch(`${Backend}/ask`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: curr, session_id: sid }),
-      });
-      const data = await res.json();
-      setItems((m) => [
-        ...m,
-        { role: "assistant", answer: data.answer, citations: data.citations },
-      ]);
-    } catch (e: any) {
-      setItems((m) => [
-        ...m,
-        { role: "assistant", answer: `Error contacting backend: ${e?.message ?? "unknown error"}` },
-      ]);
-    } finally {
-      setLoading(false);
+  const sid = ensureSession();
+  setItems((m) => [...m, { role: "user", text: curr }]);
+  setLoading(true);
+
+  try {
+    // ---- Build a clean URL (prevents double slashes) ----
+    const raw = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
+    const base = raw.replace(/\/+$/, "");           // strip trailing slashes from env
+    const url  = new URL("ask", base + "/").toString(); // safe join => .../ask
+
+    // Optional: verify in browser console on Vercel
+    console.log("Using backend:", url);
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: curr, session_id: sid }),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status} – ${txt || "non-OK response"}`);
     }
-  };
+
+    const data = await res.json();
+    setItems((m) => [
+      ...m,
+      { role: "assistant", answer: data.answer, citations: data.citations },
+    ]);
+  } catch (e: any) {
+    setItems((m) => [
+      ...m,
+      { role: "assistant", answer: `Error contacting backend: ${e?.message ?? "unknown error"}` },
+    ]);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const newChat = () => {
     const makeId =
